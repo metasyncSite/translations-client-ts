@@ -1,0 +1,40 @@
+{
+  "name": "@metasyncsite/translations-client-ts",
+  "version": "1.0.0",
+  "description": "Push/pull i18n translations (Vue, React, Next.js, etc.) to the MetaSyncSite Translation Manager — TypeScript edition",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "bin": {
+    "translations-push": "./dist/bin/push.js",
+    "translations-pull": "./dist/bin/pull.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.0"
+  },
+  "keywords": [
+    "i18n",
+    "vue-i18n",
+    "translations",
+    "localization",
+    "typescript"
+  ]
+}
