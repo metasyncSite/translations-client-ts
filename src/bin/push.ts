@@ -98,16 +98,17 @@ async function main(): Promise<void> {
   let locales = readLocales(localesPath, excludeFiles)
 
   if (locales.length === 0) {
-    console.warn(`No locale files found in: ${localesPath}`)
-    process.exit(0)
+    // Asked to push and pushed nothing — usually a wrong --path, so do not call it a success.
+    console.error(`Error: no locale files found in: ${localesPath}`)
+    process.exit(1)
   }
 
   if (onlyLocale) {
     locales = locales.filter((l) => l.locale === onlyLocale)
 
     if (locales.length === 0) {
-      console.warn(`Locale "${onlyLocale}" not found in: ${localesPath}`)
-      process.exit(0)
+      console.error(`Error: locale "${onlyLocale}" not found in: ${localesPath}`)
+      process.exit(1)
     }
   }
 
@@ -119,6 +120,7 @@ async function main(): Promise<void> {
   let totalNew = 0
   let totalUpdated = 0
   let totalKeys = 0
+  const failed: string[] = []
 
   for (const { locale, groups } of locales) {
     const keyCount = Object.values(groups).reduce((sum, g) => sum + Object.keys(g).length, 0)
@@ -137,8 +139,16 @@ async function main(): Promise<void> {
         `  ✓ ${locale}: ${data.total ?? keyCount} keys — ${data.new ?? 0} new, ${data.updated ?? 0} updated.`,
       )
     } catch (err) {
+      // Keep going so the remaining locales still get a chance, but remember the
+      // failure: exiting 0 here would let a CI step report a push that never landed.
       console.error(`  ✗ ${locale}: ${err instanceof Error ? err.message : String(err)}`)
+      failed.push(locale)
     }
+  }
+
+  if (failed.length > 0) {
+    console.error(`\nFailed locale(s): ${failed.join(', ')}. Nothing was pushed for them.`)
+    process.exit(1)
   }
 
   if (!dryRun) {
@@ -146,4 +156,7 @@ async function main(): Promise<void> {
   }
 }
 
-main()
+main().catch((error: unknown) => {
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
+})

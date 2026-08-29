@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { FlatKeys, LocaleGroups } from './types.js'
 
@@ -30,7 +30,34 @@ export function unflatten(flat: FlatKeys): Record<string, unknown> {
 }
 
 /**
- * Write a JSON file, creating parent directories as needed.
+ * Reject a locale code or group name that would escape the locales directory.
+ *
+ * Both values come straight from the API response and are used to build a file path,
+ * so a name like `../../package` would write outside the folder the caller chose.
+ */
+export function assertSafeSegment(segment: string, kind: string): string {
+  if (segment === '' || segment === '.' || segment === '..') {
+    return failSegment(segment, kind)
+  }
+
+  if (segment.includes('/') || segment.includes('\\') || segment.includes('\0')) {
+    return failSegment(segment, kind)
+  }
+
+  return segment
+}
+
+function failSegment(segment: string, kind: string): never {
+  throw new Error(`Refusing to write: ${kind} ${JSON.stringify(segment)} is not a safe path segment.`)
+}
+
+/**
+ * Write a JSON file through a temporary file, then rename it into place.
+ *
+ * Locale files are read by the application at build or run time. A direct write that is
+ * cut short — killed process, full disk — leaves a truncated file that no longer parses.
+ * rename() within the same directory is atomic, so a reader sees the old file or the new
+ * one, never half of either.
  */
 function writeJson(filePath: string, data: Record<string, unknown>): void {
   const dir = dirname(filePath)
@@ -39,7 +66,20 @@ function writeJson(filePath: string, data: Record<string, unknown>): void {
     mkdirSync(dir, { recursive: true })
   }
 
-  writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n', 'utf8')
+  const temporary = `${filePath}.${process.pid}.tmp`
+
+  try {
+    writeFileSync(temporary, JSON.stringify(data, null, 2) + '\n', 'utf8')
+    renameSync(temporary, filePath)
+  } catch (error) {
+    try {
+      unlinkSync(temporary)
+    } catch {
+      // The temporary file may never have been created; nothing to clean up.
+    }
+
+    throw error
+  }
 }
 
 /**
@@ -54,16 +94,18 @@ export function writeGroupedLocale(
   groups: LocaleGroups,
 ): string[] {
   const written: string[] = []
+  const safeLocale = assertSafeSegment(locale, 'locale')
 
   for (const [groupName, flatKeys] of Object.entries(groups)) {
     const nested = unflatten(flatKeys)
 
     if (groupName === '_json') {
-      const filePath = join(localesPath, `${locale}.json`)
+      const filePath = join(localesPath, `${safeLocale}.json`)
       writeJson(filePath, nested)
       written.push(filePath)
     } else {
-      const filePath = join(localesPath, locale, `${groupName}.json`)
+      const safeGroup = assertSafeSegment(groupName, 'group name')
+      const filePath = join(localesPath, safeLocale, `${safeGroup}.json`)
       writeJson(filePath, nested)
       written.push(filePath)
     }
@@ -89,7 +131,7 @@ export function writeFlatLocale(
   }
 
   const nested = unflatten(merged)
-  const filePath = join(localesPath, `${locale}.json`)
+  const filePath = join(localesPath, `${assertSafeSegment(locale, 'locale')}.json`)
   writeJson(filePath, nested)
 
   return [filePath]

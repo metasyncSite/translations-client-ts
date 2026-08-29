@@ -2,6 +2,8 @@
 
 TypeScript client for pushing and pulling i18n translations to/from the Translation Manager. Works with any Node.js project: Vue, React, Next.js, Nuxt, etc.
 
+Translations themselves are edited in the Translation Manager UI — **[translation.metasync.site](https://translation.metasync.site/)**. Translators work there, this package moves the result in and out of your `locales/` directory. No hosting required to try it.
+
 ---
 
 ## Requirements
@@ -25,7 +27,8 @@ yarn add @metasyncsite/translations-client-ts
 
 ## Local Installation (without npm registry)
 
-If the package is not yet published, you have three options:
+For working against an unreleased build — a fix you are testing, or a fork — there are
+three options:
 
 ### Option 1 — file path in package.json (recommended)
 
@@ -184,6 +187,44 @@ npx translations-pull \
 
 ---
 
+## Exit codes
+
+Both commands are meant to run in CI and deploy steps, so they only exit `0` when the
+work they were asked to do actually happened:
+
+| Situation | Exit code |
+|---|---|
+| Everything pushed / pulled | `0` |
+| A locale failed to fetch, write or upload | `1`, and the locale is named |
+| `--locale=xx` names a locale that does not exist | `1` |
+| Push finds no locale files at `--path` | `1` |
+| Credentials missing | `1` |
+
+A locale that fails does not abort the run — the remaining locales are still processed,
+and the failures are listed together at the end.
+
+---
+
+## Write safety
+
+Pull writes each file to a temporary name and renames it into place. `rename()` within a
+directory is atomic, so an interrupted pull leaves the previous file intact instead of a
+truncated one that no longer parses.
+
+Locale codes and group names arrive in the API response and become path segments, so they
+are validated before use: anything containing a path separator, or equal to `.` or `..`,
+is refused rather than written outside your locales directory.
+
+---
+
+## Testing
+
+```bash
+npm test   # builds, then runs node --test
+```
+
+---
+
 ## Locale Layouts
 
 The client auto-detects which layout your project uses:
@@ -290,6 +331,14 @@ Returns: `string[]` — paths of written files.
 Merges all groups and writes `locales/{locale}.json`.
 
 Returns: `string[]` — paths of written files.
+
+---
+
+### `assertSafeSegment(segment, kind)`
+
+Throws if `segment` cannot be used as a single path segment — empty, `.`, `..`, or
+containing `/`, `\\` or a null byte. Returns the segment unchanged otherwise. Used
+internally on locale codes and group names before they reach the filesystem.
 
 ---
 

@@ -76,6 +76,32 @@ function parseArgs(argv: string[]): ParsedArgs {
   return args
 }
 
+/**
+ * The response shape is not guaranteed: a group that comes back as null or a string
+ * would otherwise blow up in Object.keys() halfway through the run.
+ */
+function asGroups(data: unknown): LocaleGroups {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('unexpected response, expected a data object.')
+  }
+
+  const groups: LocaleGroups = {}
+
+  for (const [name, value] of Object.entries(data as Record<string, unknown>)) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`unexpected response, group "${name}" is not an object.`)
+    }
+
+    groups[name] = value as LocaleGroups[string]
+  }
+
+  return groups
+}
+
+function countKeys(groups: LocaleGroups): number {
+  return Object.values(groups).reduce((sum, group) => sum + Object.keys(group).length, 0)
+}
+
 async function main(): Promise<void> {
   const cwd = process.cwd()
   loadDotEnv(cwd)
@@ -108,8 +134,8 @@ async function main(): Promise<void> {
     locales = locales.filter((c) => c === onlyLocale)
 
     if (locales.length === 0) {
-      console.warn(`Locale "${onlyLocale}" not found in Translation Manager.`)
-      process.exit(0)
+      console.error(`Error: locale "${onlyLocale}" not found in Translation Manager.`)
+      process.exit(1)
     }
   }
 
@@ -120,27 +146,39 @@ async function main(): Promise<void> {
     `${prefix}Pulling ${locales.length} locale(s) [${layout} layout]: ${locales.join(', ')}`,
   )
 
+  const failed: string[] = []
+
   for (const locale of locales) {
-    const data = await fetchJson<TranslationsResponse>(
-      `${base}/api/v1/translations/${locale}?format=nested`,
-      token,
-    )
+    try {
+      const data = await fetchJson<TranslationsResponse>(
+        `${base}/api/v1/translations/${locale}?format=nested`,
+        token,
+      )
 
-    const groups: LocaleGroups = data.data ?? {}
+      const groups = asGroups(data?.data)
+      const keyCount = countKeys(groups)
 
-    const keyCount = Object.values(groups).reduce((sum, g) => sum + Object.keys(g).length, 0)
+      if (dryRun) {
+        console.log(`  ${locale}: ${keyCount} keys across ${Object.keys(groups).length} group(s).`)
+        continue
+      }
 
-    if (dryRun) {
-      console.log(`  ${locale}: ${keyCount} keys across ${Object.keys(groups).length} group(s).`)
-      continue
+      const written =
+        layout === 'grouped'
+          ? writeGroupedLocale(localesPath, locale, groups)
+          : writeFlatLocale(localesPath, locale, groups)
+
+      console.log(`  ✓ ${locale}: ${keyCount} keys → ${written.length} file(s) written.`)
+    } catch (error) {
+      // Keep going: one unreachable locale should not hide the state of the others.
+      console.error(`  ✗ ${locale}: ${error instanceof Error ? error.message : String(error)}`)
+      failed.push(locale)
     }
+  }
 
-    const written =
-      layout === 'grouped'
-        ? writeGroupedLocale(localesPath, locale, groups)
-        : writeFlatLocale(localesPath, locale, groups)
-
-    console.log(`  ✓ ${locale}: ${keyCount} keys → ${written.length} file(s) written.`)
+  if (failed.length > 0) {
+    console.error(`\nFailed locale(s): ${failed.join(', ')}. Nothing was written for them.`)
+    process.exit(1)
   }
 
   if (!dryRun) {
@@ -148,4 +186,7 @@ async function main(): Promise<void> {
   }
 }
 
-main()
+main().catch((error: unknown) => {
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
+})

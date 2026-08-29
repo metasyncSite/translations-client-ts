@@ -1,6 +1,6 @@
 export { readLocales, readFlatLayout, readGroupedLayout, detectLayout } from './langReader.js'
 export { pushLocale, fetchJson } from './apiClient.js'
-export { unflatten, writeGroupedLocale, writeFlatLocale } from './langWriter.js'
+export { unflatten, writeGroupedLocale, writeFlatLocale, assertSafeSegment } from './langWriter.js'
 export type {
   FlatKeys,
   LocaleGroups,
