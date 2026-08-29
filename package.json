@@ -7,8 +7,8 @@
     "node": ">=18.0.0"
   },
   "bin": {
-    "translations-push": "./dist/bin/push.js",
-    "translations-pull": "./dist/bin/pull.js"
+    "translations-push": "dist/bin/push.js",
+    "translations-pull": "dist/bin/pull.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
